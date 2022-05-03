@@ -1,0 +1,310 @@
+import math
+# Token types
+#
+# EOF (end-of-file) token is used to indicate that
+# there is no more input left for lexical analysis
+class TokenType():
+    # single-character token types
+    PLUS          = '+'
+    MINUS         = '-'
+    MUL           = '*'
+    DIV           = '/'
+    LPAREN        = '('
+    RPAREN        = ')'
+    COMMA         = ','
+    # block of reserved words
+    PROGRAM       = 'PROGRAM'  # marks the beginning of the block
+    INTEGER       = 'INTEGER'
+    FLOAT         = 'FLOAT'
+    PROCEDURE     = 'PROCEDURE'
+    ID            = 'ID'
+    EOF           = 'EOF'
+    SQRT          = 'SQRT'
+
+
+class Token(object):
+    
+    def __init__(self, token_type, value):
+        # token token_type: INTEGER, PLUS, MINUS, or EOF
+        self.type = token_type
+        # token value: non-negative integer value, '+', '-', or None
+        self.value = value
+
+    def __str__(self):
+        """String representation of the class instance.
+
+        Examples:
+            Token(INTEGER, 3)
+            Token(PLUS, '+')
+        """
+        return 'Token({type}, {value})'.format(
+            type=self.type,
+            value=repr(self.value)
+        )
+
+    def __repr__(self):
+        return self.__str__()
+
+
+class Interpreter(object): #Lexer
+    def __init__(self, text):
+        # client string input, e.g. "3 + 5", "12 - 5 + 3", etc
+        self.text = text
+        # self.pos is an index into self.text
+        self.pos = 0
+        # current token instance
+        self.current_token = None
+        self.current_char = self.text[self.pos]
+
+    ##########################################################
+    # Lexer code                                             #
+    ##########################################################
+    def error(self, msg=None):
+        if msg != None:
+            raise Exception(msg)
+        if self.pos > len(self.text) - 1:
+            raise Exception('Unexpected end of file at position %d.' %
+                            self.pos)
+        raise Exception('Unexpected character \'%c\' at position %d.' %
+                        (self.text[self.pos], self.pos))
+
+    def _id(self):
+        """Handle identifiers and reserved keywords"""
+
+        # Create a new token with current line and column number
+        token = Token(type=None, value=None)
+
+        value = ''
+        # alnum - letter or number
+        while self.current_char is not None and self.current_char.isalnum():
+            value += self.current_char
+            self.advance()
+
+        token_type = TokenType
+        if token_type is None:
+            token.type = TokenType.ID
+            token.value = value
+        else:
+            # reserved keyword
+            token.type = token_type
+            token.value = value.upper()
+
+        return token
+
+    def advance(self):
+        """Advance the `pos` pointer and set the `current_char` variable."""
+        self.pos += 1
+        if self.pos > len(self.text) - 1:
+            self.current_char = None  # Indicates end of input
+        else:
+            self.current_char = self.text[self.pos]
+
+    def skip_whitespace(self):
+        while self.current_char is not None and self.current_char.isspace():
+            self.advance()
+    
+
+    def number(self):
+        '''return a (multidigit) int or float consumed from the input '''
+        is_int = True
+        result = ''
+        starting_pos = self.pos
+        while self.current_char is not None and self.current_char.isdigit():
+            result += self.current_char
+            self.advance()
+        if self.current_char == '.':
+            is_int = False
+            result += self.current_char
+            self.advance()
+        while self.current_char is not None and self.current_char.isdigit():
+            result += self.current_char
+            self.advance()
+        if result == '.':
+            self.error('Expected numeric value at position {pos:d}, received \'.\''.format(pos=starting_pos))
+        return int(result) if is_int else float(result)
+        
+
+    def get_next_token(self):
+        """Lexical analyzer (also known as scanner or tokenizer)
+
+        This method is responsible for breaking a sentence
+        apart into tokens. One token at a time.
+        """
+        while self.current_char is not None:
+
+            if self.current_char.isspace():
+                self.skip_whitespace()
+                continue
+
+            if self.current_char.isdigit() or self.current_char == '.':
+                return self.number()      
+
+            if self.current_char.isalpha():
+                return self._id()
+
+            if self.current_char == '+':
+                self.advance()
+                return TokenType.PLUS
+
+            if self.current_char == '-':
+                self.advance()
+                return TokenType.MINUS
+            
+
+            if self.current_char == '*':
+                self.advance()
+                return TokenType.MUL
+
+            if self.current_char == '/':
+                self.advance()
+                return TokenType.DIV
+            
+            if self.current_char == '(':
+                self.advance()
+                return TokenType.LPAREN
+
+            if self.current_char == ')':
+                self.advance()
+                return TokenType.RPAREN
+
+            self.error()
+
+        return TokenType.EOF
+    ##########################################################
+    # Parser / Interpreter code                              #
+    ##########################################################
+    def eat(self, token_type):
+        # compare the current token type with the passed token
+        # type and if they match then "eat" the current token
+        # and assign the next token to the self.current_token,
+        # otherwise raise an exception.
+        if self.current_token.type == token_type:
+            self.current_token = self.get_next_token()
+        else:
+            self.error()
+
+    def term(self):
+        """Return a numeric(INTEGER or FLOAT) token value."""
+        token = self.current_token
+        self.eat(token.type)
+        return token.value
+
+    def expr(self):
+        """Arithmetic expression parser / interpreter."""
+        # set current token to the first token taken from the input
+        self.current_token = self.get_next_token()
+        result = self.term()
+        while self.current_token.type in (TokenType.PLUS, TokenType.MINUS, TokenType.SQRT):
+            token = self.current_token
+            if token.type == TokenType.PLUS:
+                self.eat(TokenType.PLUS)
+                result = result + self.term()
+            elif token.type == TokenType.MINUS:
+                self.eat(TokenType.MINUS)
+                result = result - self.term()
+            elif token.type == TokenType.SQRT:
+                self.eat(TokenType.SQRT)
+                result = math.sqrt(result) 
+
+    def factor(self):
+        """factor : PLUS factor
+                  | MINUS factor
+                  | INTEGER_CONST
+                  | REAL_CONST
+                  | LPAREN expr RPAREN
+                  | variable
+        """
+        token = self.current_token
+        
+        if token.type == TokenType.ID:
+            node = self.proccall_statement(token)
+            return node
+        
+        if token.type == TokenType.PLUS:
+            self.eat(TokenType.PLUS)
+            node = UnaryOp(token, self.factor())
+            return node
+        
+        elif token.type == TokenType.MINUS:
+            self.eat(TokenType.MINUS)
+            node = UnaryOp(token, self.factor())
+            return node
+        
+        elif token.type == TokenType.LPAREN:
+            self.eat(TokenType.LPAREN)
+            node = self.expr()
+            self.eat(TokenType.RPAREN)
+            return node
+        
+        else:
+            node = self.variable()
+            return node
+    
+
+    def proccall_statement(self):
+        """proccall_statement : ID LPAREN (expr (COMMA expr)*)? RPAREN"""
+        token = self.current_token
+
+        proc_name = self.current_token.value
+        self.eat(TokenType.ID)
+        self.eat(TokenType.LPAREN)
+        actual_params = []
+        if self.current_token.type != TokenType.RPAREN:
+            node = self.expr()
+            actual_params.append(node)
+
+        while self.current_token.type == TokenType.COMMA:
+            self.eat(TokenType.COMMA)
+            node = self.expr()
+            actual_params.append(node)
+
+        self.eat(TokenType.RPAREN)
+
+        node = ProcedureCall(
+            proc_name = proc_name,
+            actual_params=actual_params,
+            token= TokenType.SQRT
+        )
+        return node
+    
+
+class AST:
+    pass
+
+class UnaryOp(AST):
+    def __init__(self, op, expr):
+        self.token = self.op = op
+        self.expr = expr
+   
+
+class ProcedureCall(AST):
+    def __init__(self, proc_name, actual_params, token):
+        self.proc_name = 'sqrt'
+        self.actual_params = actual_params  # a list of AST nodes
+        self.token = token
+        # a reference to procedure declaration symbol
+        self.proc_symbol = None
+
+
+def main():
+    while True:
+        try:
+            text = input('calc> ')
+            if text == 'exit':
+                raise EOFError
+        except EOFError:
+            # If user types CTRL+D
+            print('Bye.')
+            break
+        if not text:
+            continue
+        interpreter = Interpreter(text)
+        try:
+            result = interpreter.expr()
+            print(result)
+        except Exception as error:
+            print('Error:', error)
+
+
+if __name__ == '__main__':
+    main()
